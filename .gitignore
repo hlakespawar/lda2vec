@@ -1,0 +1,8 @@
+examples/hacker_news/data/corpus
+examples/hacker_news/data/features.pd
+examples/hacker_news/data/hacker_news_comments.csv
+examples/hacker_news/data/vocab
+*.pkl
+*.npy
+*.npz
+*.hdf5*
