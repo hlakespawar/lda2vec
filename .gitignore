@@ -6,3 +6,6 @@ examples/hacker_news/data/vocab
 *.npy
 *.npz
 *.hdf5*
+*__pycache__/*
+*.xml
+.idea

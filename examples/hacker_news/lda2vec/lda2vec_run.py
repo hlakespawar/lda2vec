@@ -20,36 +20,33 @@ from examples.hacker_news.lda2vec.lda2vec_model import LDA2Vec
 
 latest = 0
 hdf_files = [f for f in os.listdir(os.getcwd()) if '.hdf5' in f and 'lda2vec' in f]
-print(hdf_files)
 nums = [int(f[7:10]) for f in hdf_files]
 if nums:
     latest = max(nums)
-print(nums)
-print(latest)
 
 # gpu_id = int(os.getenv('CUDA_GPU', 0))
 # cuda.get_device(gpu_id).use()
 # print ("Using GPU " + str(gpu_id))
 
 # You must run preprocess.py before this data becomes available
-vocab = pickle.load(open('../data/vocab', 'r'))
-corpus = pickle.load(open('../data/corpus', 'r'))
-data = np.load(open('../data/data.npz', 'r'))
-flattened = data['flattened']
-story_id = data['story_id']
-author_id = data['author_id']
-time_id = data['time_id']
+vocab = pickle.load(open('../data/vocab', 'rb'))
+corpus = pickle.load(open('../data/corpus', 'rb'))
+data = np.load(open('../data/data.npz', 'rb'))
+flattened = data['flattened'].astype('int32')
+story_id = data['story_id'].astype('int32')
+author_id = data['author_id'].astype('int32')
+time_id = data['time_id'].astype('int32')
 ranking = data['ranking'].astype('float32')
 score = data['score'].astype('float32')
 
 
 # Model Parameters
 # Number of documents
-n_stories = story_id.max() + 1
+n_stories = int(story_id.max() + 1)
 # Number of users
-n_authors = author_id.max() + 1
+n_authors = int(author_id.max() + 1)
 # Number of unique words in the vocabulary
-n_vocab = flattened.max() + 1
+n_vocab = int(flattened.max() + 1)
 # Number of dimensions in a single word vector
 n_units = 256
 # Number of topics to fit
@@ -82,7 +79,7 @@ model = LDA2Vec(n_stories=n_stories, n_story_topics=n_story_topics,
 if os.path.exists('lda2vec%3d.hdf5' % latest):
     print("Reloading from saved")
     serializers.load_hdf5("lda2vec%3d.hdf5" % latest, model)
-model.to_gpu()
+# model.to_gpu()
 optimizer = O.Adam()
 optimizer.setup(model)
 clip = chainer.optimizer.GradientClipping(5.0)
@@ -95,25 +92,27 @@ progress = shelve.open('progress.shelve')
 steps = flattened.shape[0] // batchsize
 print('steps per epoch: %d' % steps)
 for epoch in range(5000):
-    ts = prepare_topics(cuda.to_cpu(model.mixture_sty.weights.W.data).copy(),
-                        cuda.to_cpu(model.mixture_sty.factors.W.data).copy(),
-                        cuda.to_cpu(model.sampler.W.data).copy(),
+    ts = prepare_topics(model.mixture_sty.weights.W.data,
+                        model.mixture_sty.factors.W.data,
+                        model.sampler.W.data,
                         words)
+
     print_top_words_per_topic(ts)
     ts['doc_lengths'] = sty_len
     ts['term_frequency'] = term_frequency
     np.savez('topics.story.pyldavis', **ts)
-    ta = prepare_topics(cuda.to_cpu(model.mixture_aut.weights.W.data).copy(),
-                        cuda.to_cpu(model.mixture_aut.factors.W.data).copy(),
-                        cuda.to_cpu(model.sampler.W.data).copy(),
+    ta = prepare_topics(model.mixture_aut.weights.W.data,
+                        model.mixture_aut.factors.W.data,
+                        model.sampler.W.data,
                         words)
+
     print_top_words_per_topic(ta)
     ta['doc_lengths'] = aut_len
     ta['term_frequency'] = term_frequency
     np.savez('topics.author.pyldavis', **ta)
     for s, a, f in utils.chunks(batchsize, story_id, author_id, flattened):
         t0 = time.time()
-        optimizer.zero_grads()
+        model.cleargrads()
         l = model.fit_partial(s.copy(), a.copy(), f.copy())
         prior = model.prior()
         loss = prior * fraction
@@ -121,8 +120,7 @@ for epoch in range(5000):
         optimizer.update()
         msg = ("J:{j:05d} E:{epoch:05d} L:{loss:1.3e} "
                "P:{prior:1.3e} R:{rate:1.3e}")
-        prior.to_cpu()
-        loss.to_cpu()
+
         t1 = time.time()
         dt = t1 - t0
         rate = batchsize / dt
